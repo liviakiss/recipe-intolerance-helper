@@ -11,7 +11,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/venv/
 backend/.venv/
-backend/*.pyc
+backend/**/*.pyc
 backend/.pytest_cache/
 
 # Editor / OS
