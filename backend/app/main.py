@@ -12,3 +12,7 @@ def read_root():
 @app.get("/ingredient-tags", response_model=list[schemas.IngredientTagOut])
 def get_ingredient_tags(db: Session = Depends(get_db)):
     return db.query(models.IngredientTag).all()
+
+@app.get("/diet-presets", response_model=list[schemas.DietPresetOut])
+def get_diet_presets(db: Session = Depends(get_db)):
+    return db.query(models.DietPreset).all()
