@@ -1,5 +1,5 @@
 import re
-from app.models import Ingredient, IngredientTagMap, IngredientTag
+from app.models import Ingredient, IngredientTagMap, IngredientTag, IngredientSubstituteMap, Substitute
 from app.parser import parse_recipe
 
 IRREGULAR_PLURALS = {
@@ -59,5 +59,43 @@ def check_recipe(db, raw_text: str , active_tag_ids: list[int]):
         classify_ingredient(db, ingredient, active_tag_ids)
         for ingredient in parsed_ingredients
     ]
+
+def get_substitute(db, ingredient, tag_id):
+    mapping = db.query(IngredientSubstituteMap).filter(
+        IngredientSubstituteMap.ingredient_id == ingredient.id,
+        IngredientSubstituteMap.tag_id == tag_id
+    ).first()
+
+    if mapping is None:
+        return None
+
+    return db.query(Substitute).filter(Substitute.id == mapping.substitute_id).first()
+
+
+def classify_ingredient(db, parsed_ingredient, active_tag_ids):
+    ingredient = find_ingredient(db, parsed_ingredient["name"])
+
+    if ingredient is None:
+        return {**parsed_ingredient, "status": "unrecognized", "matched_tags": [], "substitute": None}
+
+    tags = get_tags_for_ingredient(db, ingredient)
+    tag_ids = {tag.id for tag in tags}
+    conflicting_tag_ids = tag_ids & set(active_tag_ids)
+
+    if conflicting_tag_ids:
+        status = "flagged"
+        flagged_tag_id = next(iter(conflicting_tag_ids))
+        substitute = get_substitute(db, ingredient, flagged_tag_id)
+        substitute_info = {"name": substitute.name, "note": substitute.note} if substitute else None
+    else:
+        status = "safe"
+        substitute_info = None
+
+    return {
+        **parsed_ingredient,
+        "status": status,
+        "matched_tags": [tag.name for tag in tags],
+        "substitute": substitute_info,
+    }
 
     

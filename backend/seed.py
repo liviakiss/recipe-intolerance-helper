@@ -1,6 +1,6 @@
 from app.database import SessionLocal
 from app import models
-from app.models import IngredientTag, DietPreset, DietPresetTagMap, Ingredient, IngredientTagMap
+from app.models import IngredientTag, DietPreset, DietPresetTagMap, Ingredient, IngredientTagMap, Substitute, IngredientSubstituteMap
 from app.ingredient_matching import normalize_ingredient_name
 
 TAGS = [
@@ -126,5 +126,59 @@ for ingredient_name, tag_names in INGREDIENTS.items():
     ingredient = get_or_create_ingredient(ingredient_name)
     for tag_name in tag_names:
         link_ingredient_to_tag(ingredient, tag_name)
+
+#-----------------------
+
+INGREDIENT_SUBSTITUTES = {
+    "flour": ("gluten-free flour blend", "Use a 1:1 gluten-free blend for most baking recipes."),
+    "egg": ("flax egg", "1 tbsp ground flaxseed + 3 tbsp water, rested 5 minutes, replaces 1 egg."),
+    "butter": ("vegan margarine", "Use a plant-based margarine or coconut oil in equal amounts."),
+    "milk": ("oat milk", "Substitute 1:1 for dairy milk in most recipes."),
+    "honey": ("maple syrup", "Use in equal amounts; slightly thinner consistency."),
+    "soy sauce": ("coconut aminos", "Substitute 1:1; slightly sweeter and lower sodium."),
+    "peanut butter": ("sunflower seed butter", "Use in equal amounts for spreads and baking."),
+    "shrimp": ("king oyster mushroom", "Sliced and pan-seared for a similar texture."),
+    "salmon": ("marinated tofu", "Firm tofu marinated in similar seasonings, pan-seared or baked."),
+    "almond": ("sunflower seeds", "Use in equal amounts for baking or snacking."),
+    "sesame oil": ("sunflower oil", "Neutral substitute; won't replicate the toasted flavor."),
+}
+
+def get_or_create_substitute(name, note):
+    existing = db.query(Substitute).filter(Substitute.name == name).first()
+    if existing:
+        return existing
+
+    substitute = Substitute(name=name, note=note)
+    db.add(substitute)
+    db.commit()
+    print(f"Seeded substitute '{name}'")
+    return substitute
+
+
+def link_ingredient_substitute(ingredient, substitute, tag_name):
+    tag = db.query(models.IngredientTag).filter(models.IngredientTag.name == tag_name).first()
+
+    existing = db.query(IngredientSubstituteMap).filter(
+        IngredientSubstituteMap.ingredient_id == ingredient.id,
+        IngredientSubstituteMap.substitute_id == substitute.id,
+        IngredientSubstituteMap.tag_id == tag.id
+    ).first()
+
+    if not existing:
+        mapping = IngredientSubstituteMap(
+            ingredient_id=ingredient.id,
+            substitute_id=substitute.id,
+            tag_id=tag.id,
+        )
+        db.add(mapping)
+        db.commit()
+        print(f"Linked substitute '{substitute.name}' to '{ingredient.name}' for tag '{tag.name}'")
+
+
+for ingredient_name, (substitute_name, note) in INGREDIENT_SUBSTITUTES.items():
+    ingredient = db.query(Ingredient).filter(Ingredient.name == ingredient_name).first()
+    substitute = get_or_create_substitute(substitute_name, note)
+    for tag_name in INGREDIENTS[ingredient_name]:
+        link_ingredient_substitute(ingredient, substitute, tag_name)
 
 db.close()
