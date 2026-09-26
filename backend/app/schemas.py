@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import datetime
 
 class IngredientTagOut(BaseModel):
     id: int
@@ -56,3 +57,44 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+class RestrictionsUpdate(BaseModel):
+    tag_ids: list[int]
+
+
+class RestrictionsOut(BaseModel):
+    tag_ids: list[int]
+
+
+class RecipeCreateRequest(BaseModel):
+    title: str | None = None
+    raw_text: str
+
+
+class RecipeSaveResult(BaseModel):
+    recipe_id: int
+    results: list[IngredientCheckResult]
+
+class RecipeListItem(BaseModel):
+    id: int
+    title: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RecipeResultOut(BaseModel):
+    ingredient_name: str
+    flagged_tag_name: str
+    substitute_name: str | None
+    substitute_note: str | None
+
+
+class RecipeDetailOut(BaseModel):
+    id: int
+    title: str | None
+    raw_text: str
+    created_at: datetime
+    results: list[RecipeResultOut]

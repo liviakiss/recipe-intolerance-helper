@@ -76,7 +76,15 @@ def classify_ingredient(db, parsed_ingredient, active_tag_ids):
     ingredient = find_ingredient(db, parsed_ingredient["name"])
 
     if ingredient is None:
-        return {**parsed_ingredient, "status": "unrecognized", "matched_tags": [], "substitute": None}
+        return {
+            **parsed_ingredient,
+            "status": "unrecognized",
+            "matched_tags": [],
+            "substitute": None,
+            "ingredient_id": None,
+            "flagged_tag_id": None,
+            "substitute_id": None,
+        }
 
     tags = get_tags_for_ingredient(db, ingredient)
     tag_ids = {tag.id for tag in tags}
@@ -87,15 +95,21 @@ def classify_ingredient(db, parsed_ingredient, active_tag_ids):
         flagged_tag_id = next(iter(conflicting_tag_ids))
         substitute = get_substitute(db, ingredient, flagged_tag_id)
         substitute_info = {"name": substitute.name, "note": substitute.note} if substitute else None
+        substitute_id = substitute.id if substitute else None
     else:
         status = "safe"
+        flagged_tag_id = None
         substitute_info = None
+        substitute_id = None
 
     return {
         **parsed_ingredient,
         "status": status,
         "matched_tags": [tag.name for tag in tags],
         "substitute": substitute_info,
+        "ingredient_id": ingredient.id,
+        "flagged_tag_id": flagged_tag_id,
+        "substitute_id": substitute_id,
     }
 
     
