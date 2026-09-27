@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
@@ -6,8 +6,17 @@ from app.ingredient_matching import check_recipe
 from app.schemas import RecipeCheckRequest, IngredientCheckResult, UserCreate, UserOut, UserLogin, Token, RestrictionsUpdate, RestrictionsOut, RecipeCreateRequest, RecipeSaveResult, RecipeListItem, RecipeDetailOut
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.models import User, UserActiveRestriction, Recipe, RecipeResult, Ingredient, IngredientTag, Substitute
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def read_root():
@@ -38,15 +47,31 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@app.post("/login", response_model=Token)
-def login(credentials: UserLogin, db: Session = Depends(get_db)):
+@app.post("/login")
+def login(credentials: UserLogin, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == credentials.email).first()
 
     if user is None or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
     access_token = create_access_token({"sub": str(user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        secure=False,  # set True once this is served over HTTPS in production
+        max_age=60 * 60 * 24,  # 24 hours, matches token expiry
+        path="/",
+    )
+
+    return {"message": "Logged in successfully"}
+
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token", path="/")
+    return {"message": "Logged out successfully"}
 
 @app.get("/me", response_model=UserOut)
 def read_current_user(current_user: User = Depends(get_current_user)):
