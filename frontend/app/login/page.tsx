@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +24,9 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
+    // A full reload (not router.push) so Nav and the home page remount
+    // and re-fetch /me and /me/restrictions with the cookie already set.
+    window.location.href = "/";
   }
 
   return (
