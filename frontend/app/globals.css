@@ -1,26 +1,89 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf7f2;
+  --foreground: #262420;
+
+  --color-surface: #ffffff;
+  --color-border: #e7e0d4;
+  --color-muted: #7a7568;
+
+  --color-primary: #3f6c51;
+  --color-primary-hover: #325a42;
+  --color-primary-soft: #eef3ec;
+
+  --color-accent: #c1723f;
+  --color-accent-soft: #fbeee2;
+
+  --color-danger: #a8362b;
+  --color-danger-soft: #fbeceb;
+  --color-danger-border: #eecac5;
+
+  --color-safe: #3f6c51;
+  --color-safe-soft: #eaf2ec;
+  --color-safe-border: #cfe1d5;
+
+  --color-warn: #8a6d1f;
+  --color-warn-soft: #f5f0e0;
+  --color-warn-border: #e3d6ab;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--color-surface);
+  --color-border: var(--color-border);
+  --color-muted: var(--color-muted);
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-accent: var(--color-accent);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-danger-border: var(--color-danger-border);
+  --color-safe: var(--color-safe);
+  --color-safe-soft: var(--color-safe-soft);
+  --color-safe-border: var(--color-safe-border);
+  --color-warn: var(--color-warn);
+  --color-warn-soft: var(--color-warn-soft);
+  --color-warn-border: var(--color-warn-border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #1b1c18;
+    --foreground: #ece7dc;
+
+    --color-surface: #232420;
+    --color-border: #34352e;
+    --color-muted: #9c9788;
+
+    --color-primary: #6ea683;
+    --color-primary-hover: #7fb694;
+    --color-primary-soft: #1e2a21;
+
+    --color-accent: #d99361;
+    --color-accent-soft: #2c231b;
+
+    --color-danger: #e08277;
+    --color-danger-soft: #2a1917;
+    --color-danger-border: #4a2a25;
+
+    --color-safe: #6ea683;
+    --color-safe-soft: #1c2620;
+    --color-safe-border: #33452e;
+
+    --color-warn: #d9bd6b;
+    --color-warn-soft: #2a2517;
+    --color-warn-border: #4a3f24;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }

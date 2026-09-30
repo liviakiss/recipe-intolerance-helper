@@ -98,3 +98,16 @@ class RecipeDetailOut(BaseModel):
     raw_text: str
     created_at: datetime
     results: list[RecipeResultOut]
+
+
+class RecipeLookupRequest(BaseModel):
+    query: str
+    active_tag_ids: list[int]
+
+
+class RecipeLookupResult(BaseModel):
+    title: str
+    image_url: str | None
+    source_url: str | None
+    raw_text: str
+    results: list[IngredientCheckResult]

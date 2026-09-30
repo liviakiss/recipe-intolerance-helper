@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.ingredient_matching import check_recipe
-from app.schemas import RecipeCheckRequest, IngredientCheckResult, UserCreate, UserOut, UserLogin, Token, RestrictionsUpdate, RestrictionsOut, RecipeCreateRequest, RecipeSaveResult, RecipeListItem, RecipeDetailOut
+from app.recipe_lookup import fetch_external_recipe
+from app.schemas import RecipeCheckRequest, IngredientCheckResult, UserCreate, UserOut, UserLogin, Token, RestrictionsUpdate, RestrictionsOut, RecipeCreateRequest, RecipeSaveResult, RecipeListItem, RecipeDetailOut, RecipeLookupRequest, RecipeLookupResult
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.models import User, UserActiveRestriction, Recipe, RecipeResult, Ingredient, IngredientTag, Substitute
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,26 @@ def get_diet_presets(db: Session = Depends(get_db)):
 @app.post("/check-recipe", response_model=list[IngredientCheckResult])
 def check_recipe_endpoint(request: RecipeCheckRequest, db: Session = Depends(get_db)):
     return check_recipe(db, request.raw_text, request.active_tag_ids)
+
+@app.post("/lookup-recipe", response_model=RecipeLookupResult)
+def lookup_recipe_endpoint(request: RecipeLookupRequest, db: Session = Depends(get_db)):
+    meal = fetch_external_recipe(request.query)
+
+    if meal is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No recipe found for '{request.query}'",
+        )
+
+    results = check_recipe(db, meal["raw_text"], request.active_tag_ids)
+
+    return {
+        "title": meal["title"],
+        "image_url": meal["image_url"],
+        "source_url": meal["source_url"],
+        "raw_text": meal["raw_text"],
+        "results": results,
+    }
 
 @app.post("/register", response_model=UserOut)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):

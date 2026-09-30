@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -30,30 +31,41 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="max-w-sm mx-auto mt-20">
-      <h1 className="text-2xl font-semibold mb-6">Log in</h1>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="border rounded px-3 py-2"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="border rounded px-3 py-2"
-        />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button type="submit" className="bg-black text-white rounded px-3 py-2">
-          Log in
-        </button>
-      </form>
+    <div className="max-w-sm mx-auto mt-20 px-6">
+      <div className="bg-surface border border-border rounded-2xl p-8">
+        <h1 className="text-xl font-semibold mb-6">Log in</h1>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          />
+          {error && <p className="text-danger text-sm">{error}</p>}
+          <button
+            type="submit"
+            className="bg-primary text-white rounded-lg px-3 py-2.5 font-medium hover:bg-primary-hover transition-colors"
+          >
+            Log in
+          </button>
+        </form>
+        <p className="text-sm text-muted mt-5 text-center">
+          No account yet?{" "}
+          <Link href="/register" className="text-primary underline">
+            Register
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

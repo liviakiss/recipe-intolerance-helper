@@ -27,7 +27,28 @@ def normalize_ingredient_name(name: str) -> str:
 
 def find_ingredient(db, name: str):
     normalized = normalize_ingredient_name(name)
-    return db.query(Ingredient).filter(Ingredient.normalized_name == normalized).first()
+
+    # An exact match covers our own clean test recipes ("egg", "flour"), but
+    # real recipe text — hand-typed or from an external source — almost
+    # always carries extra descriptive words: "Pecorino Cheese",
+    # "Free-range Eggs", "Boneless Chicken Thighs". Requiring the whole
+    # string to match exactly meant nearly everything from a real recipe
+    # fell through to "unrecognized". Instead, treat each known ingredient
+    # name as a whole-word phrase that may appear anywhere inside the
+    # parsed name, and prefer the longest (most specific) one that matches,
+    # so "olive oil" wins over any shorter coincidental overlap.
+    all_ingredients = db.query(Ingredient).all()
+
+    matches = [
+        ingredient
+        for ingredient in all_ingredients
+        if re.search(rf"\b{re.escape(ingredient.normalized_name)}\b", normalized)
+    ]
+
+    if not matches:
+        return None
+
+    return max(matches, key=lambda ingredient: len(ingredient.normalized_name))
 
 def get_tags_for_ingredient(db, ingredient):
     tag_maps = db.query(IngredientTagMap).filter(
@@ -111,5 +132,3 @@ def classify_ingredient(db, parsed_ingredient, active_tag_ids):
         "flagged_tag_id": flagged_tag_id,
         "substitute_id": substitute_id,
     }
-
-    

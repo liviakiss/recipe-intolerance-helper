@@ -51,59 +51,63 @@ export default function RecipeDetailPage() {
 
   if (notFound) {
     return (
-      <main className="max-w-2xl mx-auto mt-12 px-6">
-        <p className="text-sm text-gray-500">
-          That recipe doesn&apos;t exist, or isn&apos;t yours.{" "}
-          <Link href="/recipes" className="underline">
+      <main className="max-w-3xl mx-auto px-6 pt-14">
+        <div className="bg-surface border border-border rounded-2xl px-6 py-10 text-center">
+          <p className="text-muted mb-1">
+            That recipe doesn&apos;t exist, or isn&apos;t yours.
+          </p>
+          <Link href="/recipes" className="text-primary underline text-sm">
             Back to history
           </Link>
-        </p>
+        </div>
       </main>
     );
   }
 
   if (!recipe) {
     return (
-      <main className="max-w-2xl mx-auto mt-12 px-6">
-        <p className="text-sm text-gray-500">Loading...</p>
+      <main className="max-w-3xl mx-auto px-6 pt-14">
+        <p className="text-sm text-muted">Loading...</p>
       </main>
     );
   }
 
   return (
-    <main className="max-w-2xl mx-auto mt-12 px-6">
-      <Link href="/recipes" className="text-sm underline">
+    <main className="max-w-3xl mx-auto px-6 pt-14 pb-16">
+      <Link href="/recipes" className="text-sm text-primary underline">
         Back to history
       </Link>
 
-      <h1 className="text-2xl font-semibold mt-2 mb-1">
+      <h1 className="text-2xl font-semibold tracking-tight mt-3 mb-1">
         {recipe.title || "Untitled recipe"}
       </h1>
-      <p className="text-xs text-gray-500 mb-6">
+      <p className="text-xs text-muted mb-8">
         Saved {new Date(recipe.created_at).toLocaleString()}
       </p>
 
-      <h2 className="font-medium mb-2">Recipe</h2>
-      <pre className="text-sm bg-gray-100 text-gray-900 p-4 rounded overflow-auto whitespace-pre-wrap mb-6">
-        {recipe.raw_text}
-      </pre>
+      <section className="bg-surface border border-border rounded-2xl p-6 mb-8">
+        <h2 className="font-medium mb-3">Recipe</h2>
+        <pre className="text-sm bg-background border border-border text-foreground p-4 rounded-lg overflow-auto whitespace-pre-wrap">
+          {recipe.raw_text}
+        </pre>
+      </section>
 
-      <h2 className="font-medium mb-2">Flagged ingredients</h2>
+      <h2 className="font-medium mb-3">Flagged ingredients</h2>
       {recipe.results.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          Nothing was flagged for this recipe.
-        </p>
+        <p className="text-sm text-muted">Nothing was flagged for this recipe.</p>
       ) : (
         <div className="space-y-3">
           {recipe.results.map((r, i) => (
             <div
               key={i}
-              className="border rounded px-4 py-3 bg-red-50 border-red-300 text-red-900"
+              className="border rounded-xl px-4 py-3 bg-danger-soft border-danger-border text-danger"
             >
               <p className="font-medium">{r.ingredient_name}</p>
-              <p className="text-sm mt-1">Conflicts with: {r.flagged_tag_name}</p>
+              <p className="text-sm mt-1 opacity-90">
+                Conflicts with: {r.flagged_tag_name}
+              </p>
               {r.substitute_name && (
-                <p className="text-sm mt-2">
+                <p className="text-sm mt-2 opacity-90">
                   Try instead:{" "}
                   <span className="font-medium">{r.substitute_name}</span>
                   {r.substitute_note && ` — ${r.substitute_note}`}

@@ -17,10 +17,16 @@ type CheckResult = {
   substitute: { name: string; note: string | null } | null;
 };
 
+type RecipeMeta = {
+  title: string;
+  image_url: string | null;
+  source_url: string | null;
+};
+
 const STATUS_STYLES: Record<string, string> = {
-  flagged: "bg-red-50 border-red-300 text-red-900",
-  safe: "bg-green-50 border-green-300 text-green-900",
-  unrecognized: "bg-gray-50 border-gray-300 text-gray-700",
+  flagged: "bg-danger-soft border-danger-border text-danger",
+  safe: "bg-safe-soft border-safe-border text-safe",
+  unrecognized: "bg-warn-soft border-warn-border text-warn",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -40,6 +46,11 @@ export default function Home() {
   const [saveState, setSaveState] = useState<
     { status: "idle" } | { status: "saving" } | { status: "saved"; recipeId: number } | { status: "error"; message: string }
   >({ status: "idle" });
+
+  const [lookupQuery, setLookupQuery] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [recipeMeta, setRecipeMeta] = useState<RecipeMeta | null>(null);
 
   useEffect(() => {
     async function fetchTags() {
@@ -104,7 +115,40 @@ export default function Home() {
 
     const data = await res.json();
     setResults(data);
+    setRecipeMeta(null);
     setSaveState({ status: "idle" });
+  }
+
+  async function handleLookup() {
+    if (!lookupQuery.trim()) return;
+
+    setLookupLoading(true);
+    setLookupError(null);
+
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lookup-recipe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: lookupQuery, active_tag_ids: selectedTagIds }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setLookupError(data?.detail || "Couldn't find that recipe. Try a different name.");
+      setLookupLoading(false);
+      return;
+    }
+
+    const data = await res.json();
+    setRawText(data.raw_text);
+    setResults(data.results);
+    setRecipeMeta({
+      title: data.title,
+      image_url: data.image_url,
+      source_url: data.source_url,
+    });
+    setTitle(data.title);
+    setSaveState({ status: "idle" });
+    setLookupLoading(false);
   }
 
   async function handleSave() {
@@ -127,54 +171,121 @@ export default function Home() {
   }
 
   return (
-    <main className="max-w-2xl mx-auto mt-12 px-6">
-      <h1 className="text-2xl font-semibold mb-6">Check a recipe</h1>
+    <main className="max-w-3xl mx-auto px-6">
+      <header className="pt-14 pb-10 text-center">
+        <h1 className="text-3xl font-semibold tracking-tight mb-3">
+          Check a recipe for your intolerances
+        </h1>
+        <p className="text-muted max-w-lg mx-auto">
+          Paste any recipe, or look one up by name, pick what you need to avoid, and get
+          flagged ingredients with safe substitutes — no manual label-reading required.
+        </p>
+      </header>
 
-      <h2 className="font-medium mb-2">
-        Your restrictions
-        {isLoggedIn && (
-          <span className="text-xs font-normal text-gray-500 ml-2">
-            (synced with your account)
-          </span>
-        )}
-      </h2>
-      <div className="flex flex-wrap gap-3 mb-6">
-        {tags.map((tag) => (
-          <label key={tag.id} className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={selectedTagIds.includes(tag.id)}
-              onChange={() => toggleTag(tag.id)}
-            />
-            {tag.name}
-          </label>
-        ))}
-      </div>
+      <section className="bg-surface border border-border rounded-2xl p-6 sm:p-8 mb-8">
+        <h2 className="font-medium mb-3">
+          Your restrictions
+          {isLoggedIn && (
+            <span className="text-xs font-normal text-muted ml-2">
+              synced with your account
+            </span>
+          )}
+        </h2>
+        <div className="flex flex-wrap gap-2 mb-8">
+          {tags.map((tag) => {
+            const active = selectedTagIds.includes(tag.id);
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => toggleTag(tag.id)}
+                className={`text-sm rounded-full px-3.5 py-1.5 border transition-colors ${
+                  active
+                    ? "bg-primary border-primary text-white"
+                    : "border-border text-muted hover:border-primary hover:text-foreground"
+                }`}
+              >
+                {tag.name}
+              </button>
+            );
+          })}
+        </div>
 
-      <h2 className="font-medium mb-2">Recipe</h2>
-      <textarea
-        value={rawText}
-        onChange={(e) => setRawText(e.target.value)}
-        rows={8}
-        placeholder="Paste your recipe here, one ingredient per line..."
-        className="w-full border rounded px-3 py-2 mb-4"
-      />
+        <h2 className="font-medium mb-3">Look up a recipe by name</h2>
+        <div className="flex flex-wrap gap-3 mb-2">
+          <input
+            type="text"
+            value={lookupQuery}
+            onChange={(e) => setLookupQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLookup()}
+            placeholder="e.g. carbonara, chicken tikka masala..."
+            className="flex-1 min-w-[200px] border border-border rounded-lg px-4 py-2.5 bg-background placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+          />
+          <button
+            onClick={handleLookup}
+            disabled={lookupLoading}
+            className="rounded-lg border border-primary text-primary px-4 py-2.5 font-medium hover:bg-primary-soft transition-colors disabled:opacity-50"
+          >
+            {lookupLoading ? "Looking up..." : "Look up"}
+          </button>
+        </div>
+        {lookupError && <p className="text-sm text-danger mb-4">{lookupError}</p>}
+        <p className="text-xs text-muted mb-8">
+          Pulls a real original recipe from a public recipe database — well-known dishes
+          only, and it edits the text below so you can tweak it before checking.
+        </p>
 
-      <button
-        onClick={handleCheck}
-        className="bg-black text-white rounded px-4 py-2 mb-6"
-      >
-        Check recipe
-      </button>
+        <h2 className="font-medium mb-3">Recipe</h2>
+        <textarea
+          value={rawText}
+          onChange={(e) => setRawText(e.target.value)}
+          rows={8}
+          placeholder={"Paste your recipe here, one ingredient per line...\ne.g.\n2 eggs\n1 cup flour\n1/2 cup milk"}
+          className="w-full border border-border rounded-lg px-4 py-3 mb-5 bg-background placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+        />
+
+        <button
+          onClick={handleCheck}
+          className="bg-primary text-white rounded-lg px-5 py-2.5 font-medium hover:bg-primary-hover transition-colors"
+        >
+          Check recipe
+        </button>
+      </section>
 
       {results && (
-        <div>
-          <h2 className="font-medium mb-2">Results</h2>
+        <section className="mb-16">
+          {recipeMeta && (
+            <div className="flex items-center gap-4 bg-surface border border-border rounded-xl p-4 mb-6">
+              {recipeMeta.image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={recipeMeta.image_url}
+                  alt={recipeMeta.title}
+                  className="w-16 h-16 rounded-lg object-cover shrink-0"
+                />
+              )}
+              <div>
+                <p className="font-medium">{recipeMeta.title}</p>
+                {recipeMeta.source_url && (
+                  <a
+                    href={recipeMeta.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-primary underline"
+                  >
+                    Original source
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          <h2 className="font-medium mb-3">Results</h2>
           <div className="space-y-3 mb-6">
             {results.map((r, i) => (
               <div
                 key={i}
-                className={`border rounded px-4 py-3 ${
+                className={`border rounded-xl px-4 py-3 ${
                   STATUS_STYLES[r.status] ?? STATUS_STYLES.unrecognized
                 }`}
               >
@@ -190,13 +301,13 @@ export default function Home() {
                 </div>
 
                 {r.status === "flagged" && r.matched_tags.length > 0 && (
-                  <p className="text-sm mt-1">
+                  <p className="text-sm mt-1 opacity-90">
                     Conflicts with: {r.matched_tags.join(", ")}
                   </p>
                 )}
 
                 {r.substitute && (
-                  <p className="text-sm mt-2">
+                  <p className="text-sm mt-2 opacity-90">
                     Try instead:{" "}
                     <span className="font-medium">{r.substitute.name}</span>
                     {r.substitute.note && ` — ${r.substitute.note}`}
@@ -208,9 +319,9 @@ export default function Home() {
 
           {isLoggedIn ? (
             saveState.status === "saved" ? (
-              <p className="text-sm">
+              <p className="text-sm bg-primary-soft border border-safe-border rounded-lg px-4 py-3">
                 Saved.{" "}
-                <Link href={`/recipes/${saveState.recipeId}`} className="underline">
+                <Link href={`/recipes/${saveState.recipeId}`} className="underline font-medium">
                   View in history
                 </Link>
               </p>
@@ -221,29 +332,29 @@ export default function Home() {
                   placeholder="Recipe title (optional)"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="border rounded px-3 py-2 text-sm"
+                  className="border border-border rounded-lg px-3 py-2 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                 />
                 <button
                   onClick={handleSave}
                   disabled={saveState.status === "saving"}
-                  className="border rounded px-4 py-2 text-sm disabled:opacity-50"
+                  className="rounded-lg border border-primary text-primary px-4 py-2 text-sm font-medium hover:bg-primary-soft transition-colors disabled:opacity-50"
                 >
                   {saveState.status === "saving" ? "Saving..." : "Save recipe"}
                 </button>
                 {saveState.status === "error" && (
-                  <p className="text-sm text-red-600">{saveState.message}</p>
+                  <p className="text-sm text-danger">{saveState.message}</p>
                 )}
               </div>
             )
           ) : (
-            <p className="text-sm text-gray-500">
-              <Link href="/login" className="underline">
+            <p className="text-sm text-muted">
+              <Link href="/login" className="underline text-primary">
                 Log in
               </Link>{" "}
               to save this recipe and build a history.
             </p>
           )}
-        </div>
+        </section>
       )}
     </main>
   );
