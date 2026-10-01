@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, Response
+from fastapi import FastAPI, Depends, HTTPException, Response, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.ingredient_matching import check_recipe
 from app.recipe_lookup import fetch_external_recipe
+from app.ocr import extract_text_from_image
 from app.schemas import RecipeCheckRequest, IngredientCheckResult, UserCreate, UserOut, UserLogin, Token, RestrictionsUpdate, RestrictionsOut, RecipeCreateRequest, RecipeSaveResult, RecipeListItem, RecipeDetailOut, RecipeLookupRequest, RecipeLookupResult
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.models import User, UserActiveRestriction, Recipe, RecipeResult, Ingredient, IngredientTag, Substitute
@@ -52,6 +53,31 @@ def lookup_recipe_endpoint(request: RecipeLookupRequest, db: Session = Depends(g
         "image_url": meal["image_url"],
         "source_url": meal["source_url"],
         "raw_text": meal["raw_text"],
+        "results": results,
+    }
+
+@app.post("/scan-recipe", response_model=RecipeLookupResult)
+def scan_recipe_endpoint(
+    file: UploadFile = File(...),
+    active_tag_ids: list[int] = Query(default=[]),
+    db: Session = Depends(get_db),
+):
+    image_bytes = file.file.read()
+    raw_text = extract_text_from_image(image_bytes)
+
+    if not raw_text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't read any text from that photo. Try a clearer, well-lit shot.",
+        )
+
+    results = check_recipe(db, raw_text, active_tag_ids)
+
+    return {
+        "title": file.filename or "Scanned recipe",
+        "image_url": None,
+        "source_url": None,
+        "raw_text": raw_text,
         "results": results,
     }
 

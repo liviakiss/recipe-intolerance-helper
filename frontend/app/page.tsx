@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 type Tag = {
@@ -51,6 +51,10 @@ export default function Home() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [recipeMeta, setRecipeMeta] = useState<RecipeMeta | null>(null);
+
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchTags() {
@@ -151,6 +155,37 @@ export default function Home() {
     setLookupLoading(false);
   }
 
+  async function handleScan(file: File) {
+    setScanLoading(true);
+    setScanError(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const params = new URLSearchParams();
+    selectedTagIds.forEach((id) => params.append("active_tag_ids", String(id)));
+
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/scan-recipe?${params.toString()}`,
+      { method: "POST", body: formData }
+    );
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setScanError(data?.detail || "Couldn't read that photo. Try again.");
+      setScanLoading(false);
+      return;
+    }
+
+    const data = await res.json();
+    setRawText(data.raw_text);
+    setResults(data.results);
+    setRecipeMeta(null);
+    setTitle("");
+    setSaveState({ status: "idle" });
+    setScanLoading(false);
+  }
+
   async function handleSave() {
     setSaveState({ status: "saving" });
 
@@ -177,8 +212,8 @@ export default function Home() {
           Check a recipe for your intolerances
         </h1>
         <p className="text-muted max-w-lg mx-auto">
-          Paste any recipe, or look one up by name, pick what you need to avoid, and get
-          flagged ingredients with safe substitutes — no manual label-reading required.
+          Paste any recipe, look one up by name, or snap a photo of one — pick what you
+          need to avoid, and get flagged ingredients with safe substitutes.
         </p>
       </header>
 
@@ -230,9 +265,39 @@ export default function Home() {
           </button>
         </div>
         {lookupError && <p className="text-sm text-danger mb-4">{lookupError}</p>}
-        <p className="text-xs text-muted mb-8">
+        <p className="text-xs text-muted mb-6">
           Pulls a real original recipe from a public recipe database — well-known dishes
-          only, and it edits the text below so you can tweak it before checking.
+          only, and it fills in the text below so you can tweak it before checking.
+        </p>
+
+        <h2 className="font-medium mb-3">Or scan a recipe photo</h2>
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleScan(file);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={scanLoading}
+            className="rounded-lg border border-primary text-primary px-4 py-2.5 font-medium hover:bg-primary-soft transition-colors disabled:opacity-50"
+          >
+            {scanLoading ? "Reading photo..." : "Take or upload a photo"}
+          </button>
+        </div>
+        {scanError && <p className="text-sm text-danger mb-4">{scanError}</p>}
+        <p className="text-xs text-muted mb-8">
+          Reads text straight off a recipe card, cookbook page, or handwritten note.
+          Clear, well-lit, non-cursive text works best — check the extracted text below
+          before checking it.
         </p>
 
         <h2 className="font-medium mb-3">Recipe</h2>
