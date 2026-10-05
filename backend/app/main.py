@@ -5,6 +5,7 @@ from app import models, schemas
 from app.ingredient_matching import check_recipe
 from app.recipe_lookup import fetch_external_recipe
 from app.ocr import extract_text_from_image
+import pytesseract
 from app.schemas import RecipeCheckRequest, IngredientCheckResult, UserCreate, UserOut, UserLogin, Token, RestrictionsUpdate, RestrictionsOut, RecipeCreateRequest, RecipeSaveResult, RecipeListItem, RecipeDetailOut, RecipeLookupRequest, RecipeLookupResult
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.models import User, UserActiveRestriction, Recipe, RecipeResult, Ingredient, IngredientTag, Substitute
@@ -56,14 +57,37 @@ def lookup_recipe_endpoint(request: RecipeLookupRequest, db: Session = Depends(g
         "results": results,
     }
 
+MAX_SCAN_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
+
 @app.post("/scan-recipe", response_model=RecipeLookupResult)
 def scan_recipe_endpoint(
     file: UploadFile = File(...),
     active_tag_ids: list[int] = Query(default=[]),
     db: Session = Depends(get_db),
 ):
+    # The client-supplied content_type is just a label the browser sets —
+    # it can't be trusted on its own, but it's a cheap first filter that
+    # gives a clearer error than letting a non-image reach PIL unfiltered.
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="Please upload an image file.")
+
     image_bytes = file.file.read()
-    raw_text = extract_text_from_image(image_bytes)
+
+    if len(image_bytes) > MAX_SCAN_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="That image is too large (max 8MB).")
+
+    # The real defense against a lying content_type, or a corrupt/non-image
+    # file: let PIL actually try to decode the bytes, and catch it cleanly
+    # instead of letting an unhandled exception surface as a raw 500.
+    try:
+        raw_text = extract_text_from_image(image_bytes)
+    except pytesseract.TesseractNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="Photo scanning isn't available right now (OCR engine not installed on the server).",
+        )
+    except Exception:
+        raise HTTPException(status_code=422, detail="Couldn't read that file as an image.")
 
     if not raw_text.strip():
         raise HTTPException(
