@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/liviakiss/recipe-intolerance-helper/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/liviakiss/recipe-intolerance-helper/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-1b1c18?style=flat-square&logo=nextdotjs&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-19-1b1c18?style=flat-square&logo=react&logoColor=6ea683">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-1b1c18?style=flat-square&logo=typescript&logoColor=6ea683">
@@ -61,7 +62,9 @@ The checker works fully anonymously. An account is only needed to save recipes, 
 
 **Three outcomes, not two.** An ingredient the database doesn't know is *not* the same as one that is safe. Reporting "unrecognized" separately means the app never claims something is safe when it simply doesn't know, which matters for a tool people may use around allergies.
 
-**Whole-word matching, most specific wins.** Real recipes say "Free-range Eggs" and "Boneless Chicken Thighs", not "egg" and "chicken". Each known ingredient is matched as a whole-word phrase anywhere inside the parsed name, and the longest match wins, so "olive oil" beats any shorter accidental overlap. It is simple, explainable and fast, with one honest limit: coverage is as large as the ingredient dictionary (a couple of hundred seeded entries).
+**Whole-word matching, most specific wins.** Real recipes say "Free-range Eggs" and "Boneless Chicken Thighs", not "egg" and "chicken". Each known ingredient is matched as a whole-word phrase anywhere inside the parsed name, and the longest match wins, so "olive oil" beats any shorter accidental overlap. It is simple, explainable and fast, with one honest limit: coverage is as large as the ingredient dictionary (over 600 seeded entries).
+
+**Look-alikes are handled in the data, and "free-from" words in the matcher.** Longest-match has a trap: "cream of tartar" contains "cream", and "almond flour" contains "flour". Those get their own entries so they aren't flagged for dairy or gluten, and a test checks the tricky phrases. Words like *gluten-free*, *dairy-free* and *vegan* in front of an ingredient cancel the tags they cover, so "gluten-free pasta" isn't flagged for gluten, and the app never flags its own suggested substitutes (a test checks that too). *Lactose-free milk* only cancels lactose: it is still dairy.
 
 **Restrictions are data, not code.** Ingredients map to restriction tags, and substitutes are keyed by *ingredient + tag*. Supporting a new ingredient or diet means adding rows, not changing logic.
 
@@ -80,7 +83,7 @@ The checker works fully anonymously. An account is only needed to save recipes, 
 | Database | PostgreSQL |
 | Photo scanning | Tesseract OCR (pytesseract), Pillow |
 | Recipe lookup | [TheMealDB](https://www.themealdb.com/api.php) public API |
-| Tests | pytest (ingredient-line parser) |
+| Tests | pytest, run on every push by GitHub Actions: parser, matcher, dictionary, upload validation, and the real OCR on generated images |
 
 ## Run it locally
 
@@ -126,17 +129,20 @@ cd backend
 pytest
 ```
 
+The tests use a temporary in-memory database, so they never touch your real one. The scanner tests need Tesseract and are skipped if it isn't installed.
+
 </details>
 
 ## Known limitations
 
-- **Coverage is dictionary-bound.** Ingredients missing from the database show as "unrecognized". That is deliberate (see above), but coverage only grows as the dictionary does.
+- **Coverage is dictionary-bound.** Ingredients missing from the database show as "unrecognized". That is deliberate (see above), and it includes products whose contents depend on the brand, such as hoisin sauce or margarine. Coverage only grows as the dictionary does.
 - **OCR quality varies.** Clean cards and screenshots work well. Blurry, angled or heavily decorated photos can drop or garble lines, which is why the text can be corrected before checking.
 - **A helper, not medical advice.** It reads ingredient names only. Hidden allergens, cross-contamination and "may contain" warnings are outside its scope.
 
 ## What's next
 
 - Deployment (hosted database and an OCR-capable server)
+- Frontend tests, and lint and build checks in CI
 - Vision-model scanning as an optional upgrade behind a setting, with login-only access and a rate limit
 - A larger ingredient dictionary and per-ingredient confidence
 - One-click diet presets in the UI (Vegan, Vegetarian, Gluten-free). The preset data is already modelled and seeded in the backend

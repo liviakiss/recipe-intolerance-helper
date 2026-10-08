@@ -1,29 +1,6 @@
-import re
 from app.models import Ingredient, IngredientTagMap, IngredientTag, IngredientSubstituteMap, Substitute
 from app.parser import parse_recipe
-
-IRREGULAR_PLURALS = {
-    "leaves": "leaf",
-    "knives": "knife",
-    "loaves": "loaf",
-}
-
-def normalize_ingredient_name(name: str) -> str:
-    word = name.strip().lower()
-    word = word.replace("-", " ")
-    word = re.sub(r"[.,'’]", "", word)
-    word = re.sub(r"\s+", " ", word).strip()
-
-    if word in IRREGULAR_PLURALS:
-        return IRREGULAR_PLURALS[word]
-    if word.endswith("ies"):
-        return word[:-3] + "y"
-    if word.endswith("oes"):
-        return word[:-2]
-    if word.endswith("s") and not word.endswith("ss"):
-        return word[:-1]
-
-    return word
+from app.normalize import normalize_ingredient_name, longest_match, qualifier_exclusions  # normalize_ingredient_name is re-exported: seed.py imports it from here
 
 def find_ingredient(db, name: str):
     normalized = normalize_ingredient_name(name)
@@ -37,18 +14,13 @@ def find_ingredient(db, name: str):
     # name as a whole-word phrase that may appear anywhere inside the
     # parsed name, and prefer the longest (most specific) one that matches,
     # so "olive oil" wins over any shorter coincidental overlap.
-    all_ingredients = db.query(Ingredient).all()
+    by_name = {
+        ingredient.normalized_name: ingredient
+        for ingredient in db.query(Ingredient).all()
+    }
 
-    matches = [
-        ingredient
-        for ingredient in all_ingredients
-        if re.search(rf"\b{re.escape(ingredient.normalized_name)}\b", normalized)
-    ]
-
-    if not matches:
-        return None
-
-    return max(matches, key=lambda ingredient: len(ingredient.normalized_name))
+    best = longest_match(normalized, by_name.keys())
+    return by_name[best] if best is not None else None
 
 def get_tags_for_ingredient(db, ingredient):
     tag_maps = db.query(IngredientTagMap).filter(
@@ -57,22 +29,6 @@ def get_tags_for_ingredient(db, ingredient):
     tag_ids = [tag_map.tag_id for tag_map in tag_maps]
     return db.query(IngredientTag).filter(IngredientTag.id.in_(tag_ids)).all()
 
-
-def classify_ingredient(db, parsed_ingredient, active_tag_ids):
-        ingredient = find_ingredient(db, parsed_ingredient["name"])
-
-        if ingredient is None:
-            return {**parsed_ingredient, "status": "unrecognized", "matched_tags": []}
-
-        tags = get_tags_for_ingredient(db, ingredient)
-        tag_ids = {tag.id for tag in tags}
-
-        if tag_ids & set(active_tag_ids):
-            status = "flagged"
-        else:
-            status = "safe"
-
-        return {**parsed_ingredient, "status": status, "matched_tags": [tag.name for tag in tags]}
 
 def check_recipe(db, raw_text: str , active_tag_ids: list[int]):
     parsed_ingredients = parse_recipe(raw_text)
@@ -107,13 +63,19 @@ def classify_ingredient(db, parsed_ingredient, active_tag_ids):
             "substitute_id": None,
         }
 
-    tags = get_tags_for_ingredient(db, ingredient)
+    # "gluten-free pasta" matches the pasta entry, but the qualifier cancels
+    # the gluten tag; see FREE_FROM_QUALIFIERS in app/normalize.py.
+    cancelled = qualifier_exclusions(normalize_ingredient_name(parsed_ingredient["name"]))
+    tags = [
+        tag for tag in get_tags_for_ingredient(db, ingredient)
+        if tag.name not in cancelled
+    ]
     tag_ids = {tag.id for tag in tags}
     conflicting_tag_ids = tag_ids & set(active_tag_ids)
 
     if conflicting_tag_ids:
         status = "flagged"
-        flagged_tag_id = next(iter(conflicting_tag_ids))
+        flagged_tag_id = min(conflicting_tag_ids)  # deterministic when several restrictions conflict
         substitute = get_substitute(db, ingredient, flagged_tag_id)
         substitute_info = {"name": substitute.name, "note": substitute.note} if substitute else None
         substitute_id = substitute.id if substitute else None
