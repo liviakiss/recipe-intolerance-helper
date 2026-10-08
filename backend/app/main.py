@@ -10,12 +10,35 @@ from app.schemas import RecipeCheckRequest, IngredientCheckResult, UserCreate, U
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.models import User, UserActiveRestriction, Recipe, RecipeResult, Ingredient, IngredientTag, Substitute
 from fastapi.middleware.cors import CORSMiddleware
+from app.ratelimit import RateLimiter, rate_limit
+import os
 
 app = FastAPI()
 
+# Which websites may call this API from a browser. Comma-separated, e.g.
+# "https://my-app.vercel.app". Defaults to the local dev frontend.
+CORS_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
+# The login cookie is only marked Secure (HTTPS-only) when this is "true".
+# Keep it off for local http://localhost, turn it on when deployed.
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+# Limits for the endpoints that cost something or can be abused. The scan
+# endpoint is the expensive one (OCR), so it also has a global cap that holds
+# no matter how many different visitors there are.
+scan_per_visitor = RateLimiter(max_calls=10, window_seconds=3600)
+scan_everyone = RateLimiter(max_calls=150, window_seconds=3600)
+login_limit = RateLimiter(max_calls=10, window_seconds=60)
+register_limit = RateLimiter(max_calls=5, window_seconds=3600)
+lookup_limit = RateLimiter(max_calls=30, window_seconds=60)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,7 +46,7 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"status": "Recipe Intolerance Helper APIis running"}
+    return {"status": "Recipe Intolerance Helper API is running"}
 
 @app.get("/ingredient-tags", response_model=list[schemas.IngredientTagOut])
 def get_ingredient_tags(db: Session = Depends(get_db)):
@@ -37,7 +60,7 @@ def get_diet_presets(db: Session = Depends(get_db)):
 def check_recipe_endpoint(request: RecipeCheckRequest, db: Session = Depends(get_db)):
     return check_recipe(db, request.raw_text, request.active_tag_ids)
 
-@app.post("/lookup-recipe", response_model=RecipeLookupResult)
+@app.post("/lookup-recipe", response_model=RecipeLookupResult, dependencies=[Depends(rate_limit(lookup_limit))])
 def lookup_recipe_endpoint(request: RecipeLookupRequest, db: Session = Depends(get_db)):
     meal = fetch_external_recipe(request.query)
 
@@ -59,7 +82,14 @@ def lookup_recipe_endpoint(request: RecipeLookupRequest, db: Session = Depends(g
 
 MAX_SCAN_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
 
-@app.post("/scan-recipe", response_model=RecipeLookupResult)
+@app.post(
+    "/scan-recipe",
+    response_model=RecipeLookupResult,
+    dependencies=[
+        Depends(rate_limit(scan_per_visitor, "Too many photo scans from you. Please try again later.")),
+        Depends(rate_limit(scan_everyone, "The demo has reached its hourly photo-scan limit. Please try again later.", per_client=False)),
+    ],
+)
 def scan_recipe_endpoint(
     file: UploadFile = File(...),
     active_tag_ids: list[int] = Query(default=[]),
@@ -105,7 +135,7 @@ def scan_recipe_endpoint(
         "results": results,
     }
 
-@app.post("/register", response_model=UserOut)
+@app.post("/register", response_model=UserOut, dependencies=[Depends(rate_limit(register_limit))])
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
@@ -118,7 +148,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@app.post("/login")
+@app.post("/login", dependencies=[Depends(rate_limit(login_limit))])
 def login(credentials: UserLogin, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == credentials.email).first()
 
@@ -132,7 +162,7 @@ def login(credentials: UserLogin, response: Response, db: Session = Depends(get_
         value=access_token,
         httponly=True,
         samesite="lax",
-        secure=False,  # set True once this is served over HTTPS in production
+        secure=COOKIE_SECURE,
         max_age=60 * 60 * 24,  # 24 hours, matches token expiry
         path="/",
     )

@@ -100,6 +100,9 @@ def client(db):
 
     from app.database import get_db
     from app.main import app
+    from app.ratelimit import reset_all
+
+    reset_all()  # every test starts with fresh rate-limit counts
 
     def use_test_db():
         yield db

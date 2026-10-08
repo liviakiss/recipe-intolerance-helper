@@ -23,6 +23,48 @@ type RecipeMeta = {
   source_url: string | null;
 };
 
+// Photos from a phone can be 5-10 MB. The server accepts up to 8 MB and OCR
+// gains nothing from more pixels than this, so big photos are shrunk in the
+// browser first. If anything goes wrong the original file is sent instead.
+const SHRINK_ABOVE_BYTES = 2 * 1024 * 1024;
+const MAX_PIXELS = 5_000_000;
+const MAX_SIDE = 3000;
+
+async function shrinkImage(file: File): Promise<File> {
+  if (file.size <= SHRINK_ABOVE_BYTES) return file;
+
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(
+      1,
+      Math.sqrt(MAX_PIXELS / (bitmap.width * bitmap.height)),
+      MAX_SIDE / Math.max(bitmap.width, bitmap.height)
+    );
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return file;
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.85)
+    );
+    if (!blob || blob.size >= file.size) return file;
+
+    const name = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
+const NETWORK_ERROR = "Couldn't reach the server. Check your connection and try again.";
+
 const STATUS_STYLES: Record<string, string> = {
   flagged: "bg-danger-soft border-danger-border text-danger",
   safe: "bg-safe-soft border-safe-border text-safe",
@@ -56,42 +98,80 @@ export default function Home() {
   const [scanError, setScanError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [tagsLoaded, setTagsLoaded] = useState(false);
+  const [serverSlow, setServerSlow] = useState(false);
+
+  // The demo runs on free hosting that goes to sleep when idle, so the first
+  // request can take up to a minute. Keep trying quietly and say what's going on.
   useEffect(() => {
+    let cancelled = false;
+    const slowTimer = setTimeout(() => {
+      if (!cancelled) setServerSlow(true);
+    }, 3000);
+
     async function fetchTags() {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/ingredient-tags`);
-      const data = await res.json();
-      setTags(data);
+      for (let attempt = 0; attempt < 20 && !cancelled; attempt++) {
+        try {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/ingredient-tags`);
+          if (res.ok) {
+            const data = await res.json();
+            if (!cancelled) {
+              setTags(data);
+              setTagsLoaded(true);
+            }
+            break;
+          }
+        } catch {
+          // server still waking up or briefly unreachable: try again below
+        }
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+      }
+      clearTimeout(slowTimer);
+      if (!cancelled) setServerSlow(false);
     }
 
     fetchTags();
+    return () => {
+      cancelled = true;
+      clearTimeout(slowTimer);
+    };
   }, []);
 
+  // Wait until the server has answered once, so the sign-in check doesn't
+  // fail while it is still waking up.
   useEffect(() => {
+    if (!tagsLoaded) return;
+
     async function fetchAccountRestrictions() {
-      const meRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
-        credentials: "include",
-      });
+      try {
+        const meRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
+          credentials: "include",
+        });
 
-      if (!meRes.ok) {
+        if (!meRes.ok) {
+          setIsLoggedIn(false);
+          return;
+        }
+
+        setIsLoggedIn(true);
+
+        const restrictionsRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/me/restrictions`,
+          { credentials: "include" }
+        );
+
+        if (restrictionsRes.ok) {
+          const data = await restrictionsRes.json();
+          setSelectedTagIds(data.tag_ids);
+        }
+      } catch {
         setIsLoggedIn(false);
-        return;
-      }
-
-      setIsLoggedIn(true);
-
-      const restrictionsRes = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/me/restrictions`,
-        { credentials: "include" }
-      );
-
-      if (restrictionsRes.ok) {
-        const data = await restrictionsRes.json();
-        setSelectedTagIds(data.tag_ids);
       }
     }
 
     fetchAccountRestrictions();
-  }, []);
+  }, [tagsLoaded]);
 
   function toggleTag(tagId: number) {
     const next = selectedTagIds.includes(tagId)
@@ -111,16 +191,27 @@ export default function Home() {
   }
 
   async function handleCheck() {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/check-recipe`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ raw_text: rawText, active_tag_ids: selectedTagIds }),
-    });
+    setCheckError(null);
 
-    const data = await res.json();
-    setResults(data);
-    setRecipeMeta(null);
-    setSaveState({ status: "idle" });
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/check-recipe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_text: rawText, active_tag_ids: selectedTagIds }),
+      });
+
+      if (!res.ok) {
+        setCheckError("Couldn't check that recipe. Try again.");
+        return;
+      }
+
+      const data = await res.json();
+      setResults(data);
+      setRecipeMeta(null);
+      setSaveState({ status: "idle" });
+    } catch {
+      setCheckError(NETWORK_ERROR);
+    }
   }
 
   async function handleLookup() {
@@ -129,11 +220,18 @@ export default function Home() {
     setLookupLoading(true);
     setLookupError(null);
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lookup-recipe`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: lookupQuery, active_tag_ids: selectedTagIds }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/lookup-recipe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: lookupQuery, active_tag_ids: selectedTagIds }),
+      });
+    } catch {
+      setLookupError(NETWORK_ERROR);
+      setLookupLoading(false);
+      return;
+    }
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
@@ -160,15 +258,22 @@ export default function Home() {
     setScanError(null);
 
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", await shrinkImage(file));
 
     const params = new URLSearchParams();
     selectedTagIds.forEach((id) => params.append("active_tag_ids", String(id)));
 
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/scan-recipe?${params.toString()}`,
-      { method: "POST", body: formData }
-    );
+    let res: Response;
+    try {
+      res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/scan-recipe?${params.toString()}`,
+        { method: "POST", body: formData }
+      );
+    } catch {
+      setScanError(NETWORK_ERROR);
+      setScanLoading(false);
+      return;
+    }
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
@@ -189,12 +294,18 @@ export default function Home() {
   async function handleSave() {
     setSaveState({ status: "saving" });
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/recipes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ title: title.trim() || null, raw_text: rawText }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/recipes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title: title.trim() || null, raw_text: rawText }),
+      });
+    } catch {
+      setSaveState({ status: "error", message: NETWORK_ERROR });
+      return;
+    }
 
     if (!res.ok) {
       setSaveState({ status: "error", message: "Couldn't save this recipe. Try again." });
@@ -216,6 +327,15 @@ export default function Home() {
           need to avoid, and get flagged ingredients with safe substitutes.
         </p>
       </header>
+
+      {serverSlow && (
+        <p
+          role="status"
+          className="text-sm bg-warn-soft border border-warn-border text-warn rounded-lg px-4 py-3 mb-6"
+        >
+          The demo server is waking up (free hosting), this can take up to a minute.
+        </p>
+      )}
 
       <section className="bg-surface border border-border rounded-2xl p-6 sm:p-8 mb-8">
         <h2 className="font-medium mb-3">
@@ -315,6 +435,7 @@ export default function Home() {
         >
           Check recipe
         </button>
+        {checkError && <p className="text-sm text-danger mt-3">{checkError}</p>}
       </section>
 
       {results && (

@@ -11,6 +11,9 @@ from app.models import User
 password_hash = PasswordHash.recommended()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # Better to refuse to start than to sign login tokens with a missing key.
+    raise RuntimeError("SECRET_KEY is not set. Use a long random string.")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 
