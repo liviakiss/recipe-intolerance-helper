@@ -132,7 +132,14 @@ def strip_leading_unit(rest):
 #-----
 
 def parse_ingredient_line(element):
-    quantity, rest = strip_leading_quantity(element)
+    try:
+        quantity, rest = strip_leading_quantity(element)
+    except (ValueError, ZeroDivisionError):
+        # A line that only looks like it starts with a number ("1.2.3 g",
+        # "...", "1/0 cup"). Don't crash the request: keep the whole line as
+        # the name and let the matcher decide what it is.
+        return {"quantity": None, "unit": None, "name": element.strip()}
+
     unit, name = strip_leading_unit(rest)
     return {
         "quantity": quantity,

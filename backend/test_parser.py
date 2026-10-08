@@ -155,3 +155,16 @@ def test_parse_recipe_end_to_end():
         {"quantity": None, "unit": "pinch", "name": "salt"},
         {"quantity": 0.5, "unit": "cup", "name": "milk"},
     ]
+
+
+@pytest.mark.parametrize("line", ["1.2.3 g flour", "1..5 cups milk", "...", ". flour", "1/0 cup sugar"])
+def test_a_line_that_only_looks_like_a_number_does_not_crash(line):
+    result = parse_ingredient_line(line)
+
+    assert result == {"quantity": None, "unit": None, "name": line}
+
+
+def test_a_recipe_with_one_odd_line_still_parses_the_others():
+    result = parse_recipe("2 eggs\n1.2.3 g flour\n1 cup milk")
+
+    assert [r["name"] for r in result] == ["eggs", "1.2.3 g flour", "milk"]
