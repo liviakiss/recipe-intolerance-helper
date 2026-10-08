@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <a href="https://recipe-intolerance-helper.vercel.app/"><img alt="Live demo" src="https://img.shields.io/badge/%E2%96%B6%20Live%20demo-recipe--intolerance--helper.vercel.app-6ea683?style=for-the-badge&labelColor=1b1c18"></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/liviakiss/recipe-intolerance-helper/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/liviakiss/recipe-intolerance-helper/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-1b1c18?style=flat-square&logo=nextdotjs&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-19-1b1c18?style=flat-square&logo=react&logoColor=6ea683">
@@ -10,6 +14,7 @@
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind-4-1b1c18?style=flat-square&logo=tailwindcss&logoColor=6ea683">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-1b1c18?style=flat-square&logo=fastapi&logoColor=6ea683">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-1b1c18?style=flat-square&logo=postgresql&logoColor=6ea683">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-1b1c18?style=flat-square&logo=docker&logoColor=6ea683">
 </p>
 
 <p align="center">
@@ -17,7 +22,27 @@
   Every ingredient checked against what you can't eat, with a substitute for each one that conflicts.
 </p>
 
+<p align="center">
+  <a href="https://recipe-intolerance-helper.vercel.app/"><b>Try it live &rarr;</b></a>
+</p>
+
 ---
+
+## Try it in 30 seconds
+
+Open the [live demo](https://recipe-intolerance-helper.vercel.app/), pick **gluten** and **dairy**, and paste this:
+
+```text
+2 eggs
+200 g plain flour
+100 g butter
+1 cup dairy-free milk
+1 jar mystery relish
+```
+
+You get the flour flagged for gluten and the butter for dairy, each with a substitute. The dairy-free milk comes back safe, and the relish comes back **unrecognized** rather than guessed at. You can also look up a dish by name (try *carbonara*) or upload a photo of a recipe card.
+
+> The demo runs on free hosting that sleeps when idle, so the very first load can take up to a minute. The page tells you while it waits.
 
 ## Three ways in
 
@@ -72,7 +97,11 @@ The checker works fully anonymously. An account is only needed to save recipes, 
 
 **Upload hardening.** The scan endpoint checks the declared file type, caps uploads at 8 MB, and treats the actual decode as the real validation, since a client-declared content type can't be trusted. Failures return clear 4xx errors, not crashes.
 
-**Auth.** Argon2 password hashing, and a JWT in an HttpOnly, SameSite cookie, so the token is never readable from JavaScript.
+**Auth.** Argon2 password hashing, and a JWT in an HttpOnly, SameSite cookie, so the token is never readable from JavaScript. In production the cookie is also marked Secure.
+
+**Rate limits.** Photo scans are the one expensive endpoint, so they are limited per visitor and across all visitors together. Login, registration and recipe lookup are limited too, and a limited request gets a `429` with a `Retry-After` header. The counters live in memory, which is enough for a single small server.
+
+**Photos are never stored.** A scanned image is read in memory and thrown away; only the extracted text comes back. The browser also shrinks large phone photos before uploading them.
 
 ## Tech stack
 
@@ -80,10 +109,43 @@ The checker works fully anonymously. An account is only needed to save recipes, 
 |---|---|
 | Frontend | Next.js (App Router), React 19, TypeScript, Tailwind CSS v4 |
 | Backend | FastAPI, SQLAlchemy, Alembic, Pydantic |
-| Database | PostgreSQL |
+| Database | PostgreSQL ([Neon](https://neon.com) in production) |
 | Photo scanning | Tesseract OCR (pytesseract), Pillow |
 | Recipe lookup | [TheMealDB](https://www.themealdb.com/api.php) public API |
-| Tests | pytest, run on every push by GitHub Actions: parser, matcher, dictionary, upload validation, and the real OCR on generated images |
+| Hosting | Vercel (frontend), Render (backend in Docker, with Tesseract), Neon (database). All free tiers |
+| Tests | 150+ pytest tests, run on every push by GitHub Actions: parser, matcher, dictionary, upload validation, rate limits, and the real OCR on generated images |
+
+## How it's hosted
+
+```mermaid
+flowchart LR
+  B["Browser"] -->|"site + /api/*"| V["Vercel<br/>Next.js"]
+  V -->|"rewrite /api/*"| R["Render<br/>FastAPI + Tesseract (Docker)"]
+  R --> N[("Neon<br/>PostgreSQL")]
+```
+
+The browser only ever talks to the Vercel domain. Vercel forwards `/api/...` to the backend, so the login cookie stays on one domain and isn't treated as a blocked third-party cookie. Migrations run automatically each time the backend container starts.
+
+<details>
+<summary><b>Deploy your own copy</b></summary>
+
+1. **Database:** create a Neon project and copy the connection string (direct, not pooled; it ends in `?sslmode=require`). From `backend`, with `DATABASE_URL` set in your terminal, run `alembic upgrade head` and `python seed.py`.
+2. **Backend:** create a Render Web Service from the repo with **Language: Docker**, **Root Directory: `backend`**, health check path `/`.
+3. **Frontend:** import the repo into Vercel with **Root Directory: `frontend`**. Set the variables *before* the first deploy, because `NEXT_PUBLIC_` values are baked in at build time.
+4. Point `CORS_ORIGINS` on Render at your Vercel address.
+
+| Where | Variable | Value |
+|---|---|---|
+| Render | `DATABASE_URL` | the Neon connection string |
+| Render | `SECRET_KEY` | a long random string |
+| Render | `COOKIE_SECURE` | `true` |
+| Render | `CORS_ORIGINS` | `https://your-app.vercel.app` |
+| Vercel | `NEXT_PUBLIC_API_URL` | `/api` |
+| Vercel | `BACKEND_URL` | `https://your-service.onrender.com` |
+
+The backend refuses to start without `DATABASE_URL` or `SECRET_KEY`. To avoid cold starts, ping the backend's `/` every 10 minutes with a free cron service.
+
+</details>
 
 ## Run it locally
 
@@ -141,7 +203,7 @@ The tests use a temporary in-memory database, so they never touch your real one.
 
 ## What's next
 
-- Deployment (hosted database and an OCR-capable server)
+- A paid always-on host, so there is no cold start
 - Frontend tests, and lint and build checks in CI
 - Vision-model scanning as an optional upgrade behind a setting, with login-only access and a rate limit
 - A larger ingredient dictionary and per-ingredient confidence
